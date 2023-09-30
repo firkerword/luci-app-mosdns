@@ -20,6 +20,12 @@ plugins:
       files:
         - "/var/mosdns/geoip_cn.txt"
 
+  - tag: geosite_apple
+    type: domain_set
+    args:
+      files:
+        - "/var/mosdns/geosite_apple.txt"
+
   - tag: geosite_no_cn
     type: domain_set
     args:
@@ -66,7 +72,7 @@ plugins:
     type: domain_set
     args:
       files:
-        - "adblock"
+        ADBLOCK_LIST
 
   - tag: local_ptr
     type: domain_set
@@ -74,11 +80,25 @@ plugins:
       files:
         - "/etc/mosdns/rule/local-ptr.txt"
 
+  - tag: cloudflare_cidr
+    type: ip_set
+    args:
+      files:
+        - "/etc/mosdns/rule/cloudflare-cidr.txt"
+
   - tag: lazy_cache
     type: cache
     args:
       size: cache_size
       lazy_cache_ttl: cache_survival_time
+
+  - tag: forward_xinfeng_udp
+    type: forward
+    args:
+      concurrent: 2
+      upstreams:
+        - addr: "114.114.114.114"
+        - addr: "114.114.115.115"
 
   - tag: forward_local
     type: forward
@@ -123,6 +143,8 @@ plugins:
         exec: $modify_ddns_ttl
       - matches: "!qname $ddnslist"
         exec: $modify_ttl
+      - matches: "resp_ip $cloudflare_cidr"
+        exec: black_hole CLOUDFLARE_IP
       - matches: has_resp
         exec: accept
 
@@ -145,6 +167,17 @@ plugins:
       secondary: query_is_remote
       threshold: 500
       always_standby: true
+
+  - tag: query_is_apple_domain
+    type: sequence
+    args:
+      - matches: "!qname $geosite_apple"
+        exec: return
+      - exec: $forward_local
+      - matches: "!resp_ip $geoip_cn"
+        exec: drop_resp
+      - matches: "!has_resp"
+        exec: $forward_xinfeng_udp
 
   - tag: query_is_ddns_domain
     type: sequence
@@ -202,6 +235,8 @@ plugins:
         - "!qname $local_ptr"
         exec: $lazy_cache
       - exec: $redirect
+      - exec: jump has_resp_sequence
+      - exec: $query_is_apple_domain
       - exec: jump has_resp_sequence
       - exec: $query_is_ddns_domain
       - exec: jump has_resp_sequence
